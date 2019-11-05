@@ -109,7 +109,7 @@ class HTTP2Client {
         });
 
         req.end();
-        await promisify(req.on)("end");
+        await promisify(req.on.bind(req))("end");
       }
 
       client.close();
