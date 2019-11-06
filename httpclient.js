@@ -14,6 +14,8 @@ const logger = getLogger("http2Client");
  * ```
  * Caveat: this http2Client Currently only working on HTTP2
  * supported servers and will crash if used on HTTP1 servers
+ * to support HTTP1, ALPN need to be implemented
+ *
  */
 class HTTP2Client {
   static parseUrl(url) {
@@ -48,9 +50,17 @@ class HTTP2Client {
    * @param {string} url
    * @param {string} method [GET, POST, PUT, PATCH, DELETE]
    * @param {object} body request body, will only be used when it's POST/PUT/PATCH
+   * @param {string} defaultScheme http/https use this scheme when scheme is not in url
+   * @param {number} timeout request timeout in ms
    * @returns {JSON} response of the request, returns null on error
    */
-  static async request(url, method, body = null) {
+  static async request(
+    url,
+    method,
+    body = null,
+    defaultScheme = "http",
+    timeout = 100000
+  ) {
     try {
       let { scheme, baseUrl, path } = HTTP2Client.parseUrl(url);
       const data = [];
@@ -67,7 +77,7 @@ class HTTP2Client {
         logger.error(`Invalid url ${baseUrl}`);
       } else {
         if (!scheme) {
-          scheme = "https";
+          scheme = defaultScheme;
         }
         baseUrl = `${scheme}://${baseUrl}`;
         if (!path) {
@@ -75,7 +85,7 @@ class HTTP2Client {
         }
 
         const client = http2.connect(baseUrl);
-        client.setTimeout(100000);
+        client.setTimeout(timeout);
         client.on("timeout", () => {
           throw new Error("HTTP2 Connection Timeout");
         });
