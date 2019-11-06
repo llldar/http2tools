@@ -9,7 +9,7 @@ const logger = getLogger("http2Client");
  * const HTTP2Client = require('../../framework/http2Client');
  * const myFunc = async () => {
  *   const result = await HTTP2Client.get('www.example.com');
- *   logger.info(result);
+ *   return result;
  * };
  * ```
  * Caveat: this http2Client Currently only working on HTTP2
