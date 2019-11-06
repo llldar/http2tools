@@ -13,8 +13,8 @@ const logger = getLogger("http2Client");
  *   logger.info(result);
  * };
  * ```
- * Caveat: this httpClient Currently only working on
- * HTTP2 enabled servers and will crash if used on HTTP1 servers
+ * Caveat: this http2Client Currently only working on HTTP2
+ * supported servers and will crash if used on HTTP1 servers
  */
 class HTTP2Client {
   static parseUrl(url) {
@@ -50,9 +50,10 @@ class HTTP2Client {
    * @param {string} url
    * @param {string} method [GET, POST, PUT, PATCH, DELETE]
    * @param {object} body request body, will only be used when it's POST/PUT/PATCH
+   * @param {string} scheme header scheme, default to http
    * @returns {JSON} response of the request, returns empty string "" on error
    */
-  static async request(url, method, body = null) {
+  static async request(url, method, body = null, scheme = "http") {
     let { baseUrl, path } = HTTP2Client.parseUrl(url);
     const data = [];
 
@@ -67,8 +68,8 @@ class HTTP2Client {
     if (!baseUrl || baseUrl.length === 0) {
       logger.error(`Invalid url ${baseUrl}`);
     } else {
-      if (!baseUrl.includes("https://")) {
-        baseUrl = `https://${baseUrl}`;
+      if (!baseUrl.includes(scheme)) {
+        baseUrl = `${scheme}://${baseUrl}`;
       }
       if (!path) {
         path = "";
@@ -76,18 +77,19 @@ class HTTP2Client {
 
       const client = http2.connect(baseUrl);
       let req = null;
-      if (method === "GET" || method === "DELETE") {
+      if (["GET", "DELETE"].includes(method.toUpperCase())) {
         req = client.request({
-          [http2.constants.HTTP2_HEADER_SCHEME]: "https",
+          [http2.constants.HTTP2_HEADER_SCHEME]: scheme,
           [http2.constants.HTTP2_HEADER_METHOD]:
-            http2.constants.HTTP2_METHOD_GET,
+            methodMap[method.toUpperCase()],
           [http2.constants.HTTP2_HEADER_PATH]: `/${path}`
         });
-      } else if (method === "POST" || method === "PUT" || method === "PATCH") {
+      } else if (["POST", "PATCH", "PUT"].includes(method.toUpperCase())) {
         const buffer = Buffer.from(JSON.stringify(body));
         req = client.request({
-          [http2.constants.HTTP2_HEADER_SCHEME]: "https",
-          [http2.constants.HTTP2_HEADER_METHOD]: methodMap[method],
+          [http2.constants.HTTP2_HEADER_SCHEME]: scheme,
+          [http2.constants.HTTP2_HEADER_METHOD]:
+            methodMap[method.toUpperCase()],
           [http2.constants.HTTP2_HEADER_PATH]: `/${path}`,
           "Content-Type": "application/json",
           "Content-Length": buffer.length
