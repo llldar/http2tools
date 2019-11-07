@@ -12,4 +12,10 @@ router.get("/get", async (req, res) => {
   res.send(result);
 });
 
+router.post("/post", async (req, res) => {
+  const { url } = req.body;
+  const result = await HTTPClient.post(url, req.body);
+  res.send(result);
+});
+
 module.exports = router;
