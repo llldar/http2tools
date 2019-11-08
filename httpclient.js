@@ -1,7 +1,8 @@
-const http2 = require("http2");
-const { promisify } = require("util");
-const getLogger = require("./utils/logger");
-const logger = getLogger("http2Client");
+const http2 = require('http2');
+const { promisify } = require('util');
+const getLogger = require('./utils/logger');
+
+const logger = getLogger('http2Client');
 
 /**
  * Example usage:
@@ -19,29 +20,29 @@ const logger = getLogger("http2Client");
  */
 class HTTP2Client {
   static parseUrl(url) {
-    const regex = /^(?:(?<scheme>https?):\/\/)?(?<baseUrl>[^\/]+)(?:(?<!\/)\/(?!\/)(?<path>.*))?$/;
+    const regex = /^(?:(?<scheme>https?):\/\/)?(?<baseUrl>[^/]+)(?:(?<!\/)\/(?!\/)(?<path>.*))?$/;
     const matchObj = regex.exec(url);
     return matchObj.groups;
   }
 
   static async get(url) {
-    return HTTP2Client.request(url, "GET");
+    return HTTP2Client.request(url, 'GET');
   }
 
   static async post(url, body) {
-    return HTTP2Client.request(url, "POST", body);
+    return HTTP2Client.request(url, 'POST', body);
   }
 
   static async put(url, body) {
-    return HTTP2Client.request(url, "PUT", body);
+    return HTTP2Client.request(url, 'PUT', body);
   }
 
   static async patch(url, body) {
-    return HTTP2Client.request(url, "PATCH", body);
+    return HTTP2Client.request(url, 'PATCH', body);
   }
 
   static async delete(url) {
-    return HTTP2Client.request(url, "DELETE");
+    return HTTP2Client.request(url, 'DELETE');
   }
 
   /**
@@ -54,13 +55,7 @@ class HTTP2Client {
    * @param {number} timeout request timeout in ms
    * @returns {JSON} response of the request, returns null on error
    */
-  static async request(
-    url,
-    method,
-    body = null,
-    defaultScheme = "http",
-    timeout = 100000
-  ) {
+  static async request(url, method, body = null, defaultScheme = 'http', timeout = 100000) {
     try {
       let { scheme, baseUrl, path } = HTTP2Client.parseUrl(url);
       const data = [];
@@ -81,68 +76,70 @@ class HTTP2Client {
         }
         baseUrl = `${scheme}://${baseUrl}`;
         if (!path) {
-          path = "";
+          path = '';
         }
 
         const client = http2.connect(baseUrl);
         client.setTimeout(timeout);
-        client.on("timeout", () => {
-          throw new Error("HTTP2 Connection Timeout");
+        client.on('timeout', () => {
+          throw new Error('HTTP2 Connection Timeout');
         });
 
-        client.on("error", err => {
+        client.on('error', err => {
           logger.error(err);
         });
 
         let req = null;
-        if (["GET", "DELETE"].includes(method.toUpperCase())) {
+        if (['GET', 'DELETE'].includes(method.toUpperCase())) {
           req = client.request({
             [http2.constants.HTTP2_HEADER_SCHEME]: scheme,
-            [http2.constants.HTTP2_HEADER_METHOD]:
-              methodMap[method.toUpperCase()],
+            [http2.constants.HTTP2_HEADER_METHOD]: methodMap[method.toUpperCase()],
             [http2.constants.HTTP2_HEADER_PATH]: `/${path}`
           });
-        } else if (["POST", "PATCH", "PUT"].includes(method.toUpperCase())) {
+        } else if (['POST', 'PATCH', 'PUT'].includes(method.toUpperCase())) {
           const buffer = Buffer.from(JSON.stringify(body));
           req = client.request({
             [http2.constants.HTTP2_HEADER_SCHEME]: scheme,
-            [http2.constants.HTTP2_HEADER_METHOD]:
-              methodMap[method.toUpperCase()],
+            [http2.constants.HTTP2_HEADER_METHOD]: methodMap[method.toUpperCase()],
             [http2.constants.HTTP2_HEADER_PATH]: `/${path}`,
-            "Content-Type": "application/json",
-            "Content-Length": buffer.length
+            'Content-Type': 'application/json',
+            'Content-Length': buffer.length
           });
           req.write(buffer);
         } else {
           logger.error(
-            `Invalid method passed to http2Client, only supports ${Object.keys(
-              methodMap
-            ).join(", ")}`
+            `Invalid method passed to http2Client, only supports ${Object.keys(methodMap).join(
+              ', '
+            )}`
           );
         }
 
         if (req) {
-          req.setEncoding("utf8");
+          req.setEncoding('utf8');
 
-          req.on("data", chunk => {
+          req.on('data', chunk => {
             data.push(chunk);
           });
 
-          req.on("error", err => {
+          req.on('error', err => {
             logger.error(err);
           });
 
+          req.on('response', headers => {
+            logger.info(headers[':status']);
+          });
+
           req.end();
-          await promisify(req.on.bind(req))("end");
+          await promisify(req.on.bind(req))('end');
         }
 
         client.close();
       }
+
       if (data && data.length > 0) {
         return data.join();
-      } else {
-        return null;
       }
+      return null;
     } catch (err) {
       logger.error(err);
       return null;
