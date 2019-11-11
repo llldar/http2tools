@@ -103,6 +103,10 @@ class HTTP2Client {
         });
 
         let req = null;
+        logger.info(`scheme: ${scheme}`);
+        logger.info(`url: ${baseUrl}`);
+        logger.info(`method: ${method}`);
+        logger.info(`path: ${path}`);
         if (['GET', 'DELETE'].includes(method.toUpperCase())) {
           req = client.request({
             [http2.constants.HTTP2_HEADER_SCHEME]: scheme,
