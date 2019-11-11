@@ -38,24 +38,24 @@ class HTTP2Client {
     return matchObj.groups;
   }
 
-  static async get(url) {
-    return HTTP2Client.request(url, 'GET');
+  static async get(url, header = null) {
+    return HTTP2Client.request(url, 'GET', header);
   }
 
-  static async post(url, body) {
-    return HTTP2Client.request(url, 'POST', body);
+  static async post(url, body, header = null) {
+    return HTTP2Client.request(url, 'POST', body, header);
   }
 
-  static async put(url, body) {
-    return HTTP2Client.request(url, 'PUT', body);
+  static async put(url, body, header = null) {
+    return HTTP2Client.request(url, 'PUT', body, header);
   }
 
-  static async patch(url, body) {
-    return HTTP2Client.request(url, 'PATCH', body);
+  static async patch(url, body, header = null) {
+    return HTTP2Client.request(url, 'PATCH', body, header);
   }
 
-  static async delete(url) {
-    return HTTP2Client.request(url, 'DELETE');
+  static async delete(url, header = null) {
+    return HTTP2Client.request(url, 'DELETE', header);
   }
 
   /**
@@ -64,11 +64,19 @@ class HTTP2Client {
    * @param {string} url
    * @param {string} method [GET, POST, PUT, PATCH, DELETE]
    * @param {object} body request body, will only be used when it's POST/PUT/PATCH
-   * @param {string} defaultScheme http/https use this scheme when scheme is not in url
+   * @param {object} header request headers, manually set headers to override the default headers
+   * @param {string} defaultScheme http/https default scheme when scheme is not in url
    * @param {number} timeout request timeout in ms
    * @returns {JSON} response of the request, returns null on error
    */
-  static async request(url, method, body = null, defaultScheme = 'http', timeout = 100000) {
+  static async request(
+    url,
+    method,
+    body = null,
+    header = null,
+    defaultScheme = 'http',
+    timeout = 30000
+  ) {
     try {
       let { scheme, baseUrl, path } = HTTP2Client.parseUrl(url);
       const data = [];
@@ -104,15 +112,16 @@ class HTTP2Client {
         });
 
         let req = null;
-        logger.info(`scheme: ${scheme}`);
-        logger.info(`url: ${baseUrl}`);
-        logger.info(`method: ${method}`);
-        logger.info(`path: ${path}`);
+        logger.debug(`scheme: ${scheme}`);
+        logger.debug(`url: ${baseUrl}`);
+        logger.debug(`method: ${method}`);
+        logger.debug(`path: /${path}`);
         if (['GET', 'DELETE'].includes(method.toUpperCase())) {
           req = client.request({
             [http2.constants.HTTP2_HEADER_SCHEME]: scheme,
             [http2.constants.HTTP2_HEADER_METHOD]: methodMap[method.toUpperCase()],
-            [http2.constants.HTTP2_HEADER_PATH]: `/${path}`
+            [http2.constants.HTTP2_HEADER_PATH]: `/${path}`,
+            ...header
           });
         } else if (['POST', 'PATCH', 'PUT'].includes(method.toUpperCase())) {
           const buffer = Buffer.from(JSON.stringify(body));
@@ -121,7 +130,8 @@ class HTTP2Client {
             [http2.constants.HTTP2_HEADER_METHOD]: methodMap[method.toUpperCase()],
             [http2.constants.HTTP2_HEADER_PATH]: `/${path}`,
             'Content-Type': 'application/json',
-            'Content-Length': buffer.length
+            'Content-Length': buffer.length,
+            ...header
           });
           req.write(buffer);
         } else {
@@ -145,7 +155,7 @@ class HTTP2Client {
 
           req.on('response', headers => {
             const statusCode = headers[':status'];
-            logger.info(`statusCode: ${statusCode}`);
+            logger.debug(`statusCode: ${statusCode}`);
             if (statusCode >= 400) {
               error = new NRFError('Error happended in NRF Server', statusCode);
             }
@@ -177,5 +187,4 @@ class HTTP2Client {
 }
 
 module.exports.NRFError = NRFError;
-
 module.exports = HTTP2Client;
