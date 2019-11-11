@@ -8,20 +8,13 @@ const asyncHandler = fn => async (req, res, next) => {
   } catch (err) {
     logger.error(err);
 
-    let errors = {
-      message: 'Internal Sever Error',
-      error: err
+    const error = {
+      message: err.message || 'Internal Sever Error',
+      error: err,
+      statusCode: err.statusCode
     };
 
-    if (err.name === 'NRFError') {
-      errors = {
-        message: 'NRF Error',
-        error: err,
-        statusCode: err.statusCode
-      };
-    }
-
-    res.status(errors.statusCode || 500).json(errors);
+    res.status(error.statusCode || 500).json(error);
   }
 };
 
