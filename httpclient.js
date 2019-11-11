@@ -1,8 +1,21 @@
+// eslint-disable-next-line max-classes-per-file
 const http2 = require('http2');
 const { promisify } = require('util');
 const getLogger = require('./utils/logger');
 
 const logger = getLogger('http2Client');
+
+/**
+ * Custom Error type for NRF
+ */
+class NRFError extends Error {
+  constructor(message = '', statusCode = 500) {
+    super(message);
+    this.name = 'NRFError';
+    this.message = message;
+    this.statusCode = statusCode;
+  }
+}
 
 /**
  * Example usage:
@@ -82,7 +95,7 @@ class HTTP2Client {
         const client = http2.connect(baseUrl);
         client.setTimeout(timeout);
         client.on('timeout', () => {
-          throw new Error('HTTP2 Connection Timeout');
+          throw new NRFError('HTTP2 Connection Timeout', 408);
         });
 
         client.on('error', err => {
@@ -114,6 +127,7 @@ class HTTP2Client {
           );
         }
 
+        let error = null;
         if (req) {
           req.setEncoding('utf8');
 
@@ -126,11 +140,19 @@ class HTTP2Client {
           });
 
           req.on('response', headers => {
-            logger.info(headers[':status']);
+            const statusCode = headers[':status'];
+            logger.info(`statusCode: ${statusCode}`);
+            if (statusCode >= 400) {
+              error = new NRFError('Error happended in NRF Server', statusCode);
+            }
           });
 
           req.end();
           await promisify(req.on.bind(req))('end');
+
+          if (error) {
+            throw error;
+          }
         }
 
         client.close();
@@ -141,10 +163,15 @@ class HTTP2Client {
       }
       return null;
     } catch (err) {
+      if (err.name === 'NRFError') {
+        throw err;
+      }
       logger.error(err);
       return null;
     }
   }
 }
+
+module.exports.NRFError = NRFError;
 
 module.exports = HTTP2Client;

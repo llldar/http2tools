@@ -8,7 +8,7 @@ const app = http2server();
 app.post('/nf-instances', (req, res) => {
   logger.info(req.query);
   logger.info(req.body);
-  res.json({});
+  res.json(req.body);
 });
 
 app.get('/group-profiles/gpsi-groups/', (req, res) => {
