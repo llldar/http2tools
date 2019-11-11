@@ -2,29 +2,26 @@ const getLogger = require('./utils/logger');
 
 const logger = getLogger(__filename.slice(__dirname.length + 1, -3));
 
-const asyncHandler = fn => async (...args) => {
+const asyncHandler = fn => async (req, res, next) => {
   try {
-    await fn(...args);
+    await fn(req, res, next);
   } catch (err) {
     logger.error(err);
 
-    const resFn = args.find(arg => arg.name === 'res');
-    if (resFn) {
-      let errors = {
-        message: 'Internal Sever Error',
-        error: err
+    let errors = {
+      message: 'Internal Sever Error',
+      error: err
+    };
+
+    if (err.name === 'NRFError') {
+      errors = {
+        message: 'NRF Error',
+        error: err,
+        statusCode: err.statusCode
       };
-
-      if (err.name === 'NRFError') {
-        errors = {
-          message: 'NRF Error',
-          error: err,
-          statusCode: err.statusCode
-        };
-      }
-
-      resFn.status(errors.statusCode || 500).json(errors);
     }
+
+    res.status(errors.statusCode || 500).json(errors);
   }
 };
 
