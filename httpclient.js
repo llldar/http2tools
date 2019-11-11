@@ -72,6 +72,7 @@ class HTTP2Client {
     try {
       let { scheme, baseUrl, path } = HTTP2Client.parseUrl(url);
       const data = [];
+      let error = null;
 
       const methodMap = {
         GET: http2.constants.HTTP2_METHOD_GET,
@@ -95,7 +96,7 @@ class HTTP2Client {
         const client = http2.connect(baseUrl);
         client.setTimeout(timeout);
         client.on('timeout', () => {
-          throw new NRFError('HTTP2 Connection Timeout', 408);
+          error = new NRFError('HTTP2 Connection Timeout', 408);
         });
 
         client.on('error', err => {
@@ -131,7 +132,6 @@ class HTTP2Client {
           );
         }
 
-        let error = null;
         if (req) {
           req.setEncoding('utf8');
 
