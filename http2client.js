@@ -18,8 +18,11 @@ class Http2ClientError extends Error {
 }
 
 /**
- * Example usage:
- * ```
+ * Caveat: this http2Client Currently only working on HTTP2
+ * supported servers and will crash if used on HTTP1 servers
+ * to support HTTP1, ALPN need to be implemented
+ *
+ * @example
  * const HTTP2Client = require('../../framework/http2Client');
  * const http2client = new HTTP2Client('myService');
  *
@@ -27,10 +30,6 @@ class Http2ClientError extends Error {
  *   const result = await http2client.get('www.example.com');
  *   return result;
  * };
- * ```
- * Caveat: this http2Client Currently only working on HTTP2
- * supported servers and will crash if used on HTTP1 servers
- * to support HTTP1, ALPN need to be implemented
  *
  */
 class HTTP2Client {
@@ -98,26 +97,27 @@ class HTTP2Client {
         path = '';
       }
 
-      const client = http2.connect(baseUrl);
-      client.setTimeout(timeout);
+      const session = http2.connect(baseUrl);
+      session.setTimeout(timeout);
 
       let req = null;
 
-      logger.info(
-        `${method} ${baseUrl}/${path} ${header ? `header:${header} ` : ''}${
-          body ? `data:${body}` : ''
-        }`
-      );
       if (['GET', 'DELETE'].includes(method.toUpperCase())) {
-        req = client.request({
+        logger.info(`${method} ${baseUrl}/${path} ${header ? `header:${header} ` : ''}`);
+        req = session.request({
           [http2.constants.HTTP2_HEADER_SCHEME]: scheme,
           [http2.constants.HTTP2_HEADER_METHOD]: methodMap[method.toUpperCase()],
           [http2.constants.HTTP2_HEADER_PATH]: `/${path}`,
           ...header
         });
       } else if (['POST', 'PATCH', 'PUT'].includes(method.toUpperCase())) {
+        logger.info(
+          `${method} ${baseUrl}/${path} ${header ? `header:${header} ` : ''}${
+            body ? `data:${body}` : ''
+          }`
+        );
         const buffer = Buffer.from(JSON.stringify(body));
-        req = client.request({
+        req = session.request({
           [http2.constants.HTTP2_HEADER_SCHEME]: scheme,
           [http2.constants.HTTP2_HEADER_METHOD]: methodMap[method.toUpperCase()],
           [http2.constants.HTTP2_HEADER_PATH]: `/${path}`,
@@ -135,39 +135,57 @@ class HTTP2Client {
 
       req.setEncoding('utf8');
 
-      promisify(req.on.bind(req))('data').then(result => data.push(result));
+      // custom promisfy functions for req.on session.on
+      // they did not follow the node.js (err, result) callback pattern
+      // thus needing custom promisify function
+      req.on[promisify.custom] = event =>
+        new Promise(resolve => {
+          req.on(event, value => {
+            resolve(value);
+          });
+        });
+
+      session.on[promisify.custom] = event =>
+        new Promise(resolve => {
+          session.on(event, value => {
+            resolve(value);
+          });
+        });
+
+      req.on[promisify.custom]
+        .bind(req)('data')
+        .then(chunk => data.push(chunk));
 
       await Promise.race([
-        async () => {
-          const err = await promisify(req.on.bind(req))('error');
-          logger.error(err);
-          throw new Http2ClientError('Bad Request', 400, this.serviceName);
-        },
-        async () => {
-          const headers = await promisify(req.on.bind(req))('response');
+        (async () => {
+          const headers = await req.on[promisify.custom].bind(req)('response');
           const statusCode = headers[':status'];
           logger.debug(`statusCode: ${statusCode}`);
           if (statusCode >= 400) {
             throw new Http2ClientError(`${this.serviceName} Error`, statusCode, this.serviceName);
           }
           return true;
-        },
-        async () => {
-          await promisify(client.on.bind(client))('timeout');
-          throw new Http2ClientError('Connection Timeout', 408, this.serviceName);
-        },
-        async () => {
-          const err = await promisify(client.on.bind(client))('error');
+        })(),
+        (async () => {
+          const err = await req.on[promisify.custom].bind(req)('error');
           logger.error(err);
           throw new Http2ClientError('Bad Request', 400, this.serviceName);
-        }
+        })(),
+        (async () => {
+          await session.on[promisify.custom].bind(session)('timeout');
+          throw new Http2ClientError('Connection Timeout', 408, this.serviceName);
+        })(),
+        (async () => {
+          await session.on[promisify.custom].bind(session)('error');
+          throw new Http2ClientError('Bad Request', 400, this.serviceName);
+        })()
       ]);
 
-      // req.end();
+      req.end();
       await promisify(req.on.bind(req))('end');
 
-      // client.close();
-      await promisify(client.on.bind(client))('close');
+      session.close();
+      await promisify(session.on.bind(session))('close');
     }
 
     if (data && data.length > 0) {
