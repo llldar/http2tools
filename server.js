@@ -1,9 +1,9 @@
-const http2server = require('./http2server');
+const HTTP2Server = require('./http2server');
 const getLogger = require('./utils/logger');
 
 const logger = getLogger(__filename.slice(__dirname.length + 1, -3));
 
-const app = http2server();
+const app = new HTTP2Server();
 
 app.get('/nrf-addresses', (req, res) => {
   logger.info(req.query);

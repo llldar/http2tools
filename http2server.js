@@ -2,12 +2,41 @@ const http2 = require('http2');
 const { promisify } = require('util');
 const getLogger = require('./utils/logger');
 
-// eslint-disable-next-line spaced-comment
-/// <reference type="./http2server.d.ts" />
-
 const logger = getLogger(__filename.slice(__dirname.length + 1, -3));
 
-class CustomHttp2Server {
+/**
+ * Caveat: this HTTP2 server is experimental
+ * should only be used to test HTTP2 client
+ * The basic usage is like epxress but it's not express
+ * you cannot pass express middleware or router to it
+ *
+ * supports
+ * req -> param query body (param should be in {} not after :)
+ * res -> send json status
+ *
+ * @example
+ * const HTTP2Server = require('../../framework/http2/server');
+ * const app = new HTTP2Server();
+ *
+ * app.get('/your-path/{id}', (req, res) => {
+ *   logger.info(req.query);
+ *   res.json({
+ *     message: 'get success',
+ *     data: req.query
+ *   });
+ * });
+ *
+ * app.post('/your-path', (req, res) => {
+ *   logger.info(req.body);
+ *   res.json({
+ *     message: 'post success',
+ *     data: req.body
+ *   });
+ * });
+ *
+ * app.listen(1234);
+ */
+class HTTP2Server {
   constructor() {
     this.server = http2.createServer();
     this.routers = [];
@@ -41,9 +70,9 @@ class CustomHttp2Server {
         }
 
         const routeObj = this.routers.find(element => {
-          if (element.route.includes('{')) {
+          if (element.path.includes('{')) {
             const regexP = /^(?<basePath>[^{]+){(?<param>[^}]+)}$/;
-            const matchP = regexP.exec(element.route);
+            const matchP = regexP.exec(element.path);
             if (matchP) {
               const { basePath, param } = matchP.groups;
               if (requestPath.includes(basePath) && element.mehtod === requestMethod) {
@@ -52,7 +81,7 @@ class CustomHttp2Server {
               }
             }
           }
-          if (element.route === requestPath && element.mehtod === requestMethod) {
+          if (element.path === requestPath && element.mehtod === requestMethod) {
             return true;
           }
           return false;
@@ -63,9 +92,9 @@ class CustomHttp2Server {
           body: requestData && requestData.length > 0 ? JSON.parse(requestData.join('')) : null
         };
         const customResponse = {
-          data: 'defaultData',
+          data: '',
           type: 'application/json',
-          statusCode: null,
+          statusCode: 200,
           send(obj) {
             this.data = obj;
             this.type = 'text/html';
@@ -99,31 +128,29 @@ class CustomHttp2Server {
       });
   }
 
-  get(route, router) {
-    this.addRouter('GET', route, router);
+  get(path, router) {
+    this.addRouter('GET', path, router);
   }
 
-  post(route, router) {
-    this.addRouter('POST', route, router);
+  post(path, router) {
+    this.addRouter('POST', path, router);
   }
 
-  put(route, router) {
-    this.addRouter('PUT', route, router);
+  put(path, router) {
+    this.addRouter('PUT', path, router);
   }
 
-  patch(route, router) {
-    this.addRouter('PATCH', route, router);
+  patch(path, router) {
+    this.addRouter('PATCH', path, router);
   }
 
-  delete(route, router) {
-    this.addRouter('DELETE', route, router);
+  delete(path, router) {
+    this.addRouter('DELETE', path, router);
   }
 
-  addRouter(mehtod, route, router) {
-    this.routers.push({ route, mehtod, router });
+  addRouter(mehtod, path, router) {
+    this.routers.push({ path, mehtod, router });
   }
 }
 
-const getHttp2Server = () => new CustomHttp2Server();
-
-module.exports = getHttp2Server;
+module.exports = HTTP2Server;

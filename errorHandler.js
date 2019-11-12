@@ -10,7 +10,6 @@ const asyncHandler = fn => async (req, res, next) => {
 
     const error = {
       message: err.message || 'Internal Sever Error',
-      error: err,
       statusCode: err.statusCode
     };
 
