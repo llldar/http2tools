@@ -160,7 +160,7 @@ class HTTP2Client {
       .bind(req)('data')
       .then(chunk => data.push(chunk));
 
-    await Promise.race([
+    Promise.race([
       (async () => {
         const headers = await req.on[promisify.custom].bind(req)('response');
         const statusCode = headers[':status'];
