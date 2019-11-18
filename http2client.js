@@ -160,7 +160,9 @@ class HTTP2Client {
       .bind(req)('data')
       .then(chunk => data.push(chunk));
 
-    Promise.race([
+    req.end();
+
+    await Promise.race([
       (async () => {
         const headers = await req.on[promisify.custom].bind(req)('response');
         const statusCode = headers[':status'];
@@ -184,7 +186,6 @@ class HTTP2Client {
       })()
     ]);
 
-    req.end();
     await promisify(req.on.bind(req))('end');
 
     session.close();
