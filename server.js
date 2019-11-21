@@ -55,7 +55,9 @@ app.patch('/nrf-addresses', (req, res) => {
 
 app.delete('/nrf-addresses', (req, res) => {
   logger.info(req.query);
-  res.status(204);
+  res.json({
+    message: 'delete success'
+  });
 });
 
 app.listen(6666);

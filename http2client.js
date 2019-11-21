@@ -75,7 +75,6 @@ class HTTP2Client {
    */
   async request(url, method, body, header, defaultScheme = 'http', timeout = 30000) {
     let { scheme, baseUrl, path } = HTTP2Client.parseUrl(url);
-    const data = [];
 
     const methodMap = {
       GET: http2.constants.HTTP2_METHOD_GET,
@@ -156,25 +155,33 @@ class HTTP2Client {
         });
       });
 
-    req.on[promisify.custom]
-      .bind(req)('data')
-      .then(chunk => data.push(chunk));
-
-    req.end();
-
-    await Promise.race([
+    const data = [];
+    let statusCode;
+    const response = await Promise.race([
       (async () => {
-        const headers = await req.on[promisify.custom].bind(req)('response');
-        const statusCode = headers[':status'];
+        req.on[promisify.custom]
+          .bind(req)('data')
+          .then(chunk => data.push(chunk));
+        req.on[promisify.custom]
+          .bind(req)('response')
+          .then(headers => {
+            statusCode = headers[':status'];
+          });
+        req.end();
+        await req.on[promisify.custom].bind(req)('end');
         logger.debug(`statusCode: ${statusCode}`);
         if (statusCode >= 400) {
-          throw new Http2ClientError(`${this.serviceName} Error`, statusCode, this.serviceName);
+          throw new Http2ClientError(
+            `${this.serviceName} Error${data.length > 0 ? `: ${data.join('')}` : ''}`,
+            statusCode,
+            this.serviceName
+          );
         }
-        return true;
+        return data.length > 0 ? data.join('') : {};
       })(),
       (async () => {
         const err = await req.on[promisify.custom].bind(req)('error');
-        throw new Http2ClientError(`${err} ${data.join('')}`, 400, this.serviceName);
+        throw new Http2ClientError(err, 400, this.serviceName);
       })(),
       (async () => {
         await session.on[promisify.custom].bind(session)('timeout');
@@ -186,16 +193,10 @@ class HTTP2Client {
       })()
     ]);
 
-    await promisify(req.on.bind(req))('end');
-
     session.close();
     await promisify(session.on.bind(session))('close');
 
-    if (data.length > 0) {
-      return data.join();
-    }
-
-    return {};
+    return response;
   }
 }
 
