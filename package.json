@@ -8,7 +8,8 @@
     "dev": "nodemon app.js",
     "prod": "node app.js",
     "server": "nodemon server.js",
-    "debug": "node --inspect app.js",
+    "debugC": "node --inspect app.js",
+    "debugS": "node --inspect server.js",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "author": "",

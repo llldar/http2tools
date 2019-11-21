@@ -141,34 +141,32 @@ class HTTP2Client {
     // custom promisfy functions for req.on session.on
     // they did not follow the node.js (err, result) callback pattern
     // thus needing custom promisify function
-    req.on[promisify.custom] = event =>
+    promisify.custom = fn => event =>
       new Promise(resolve => {
-        req.on(event, value => {
-          resolve(value);
-        });
-      });
-
-    session.on[promisify.custom] = event =>
-      new Promise(resolve => {
-        session.on(event, value => {
+        fn(event, value => {
           resolve(value);
         });
       });
 
     const data = [];
     let statusCode;
+
+    (async () => {
+      const chunk = await promisify.custom(req.on.bind(req))('data');
+      data.push(chunk);
+    })();
+
+    (async () => {
+      const headers = await promisify.custom(req.on.bind(req))('response');
+      statusCode = headers[':status'];
+    })();
+
+    req.end();
+
     const response = await Promise.race([
       (async () => {
-        req.on[promisify.custom]
-          .bind(req)('data')
-          .then(chunk => data.push(chunk));
-        req.on[promisify.custom]
-          .bind(req)('response')
-          .then(headers => {
-            statusCode = headers[':status'];
-          });
-        req.end();
-        await req.on[promisify.custom].bind(req)('end');
+        await promisify.custom(req.on.bind(req))('end');
+        await new Promise(resolve => setTimeout(resolve, 1)); // needed for proper error handling
         logger.debug(`statusCode: ${statusCode}`);
         if (statusCode >= 400) {
           throw new Http2ClientError(
@@ -180,22 +178,24 @@ class HTTP2Client {
         return data.length > 0 ? data.join('') : {};
       })(),
       (async () => {
-        const err = await req.on[promisify.custom].bind(req)('error');
-        throw new Http2ClientError(err, 400, this.serviceName);
+        const err = await promisify.custom(req.on.bind(req))('error');
+        throw new Http2ClientError(
+          `${err}${data.length > 0 ? `: ${data.join('')}` : ''}`,
+          400,
+          this.serviceName
+        );
       })(),
       (async () => {
-        await session.on[promisify.custom].bind(session)('timeout');
+        await promisify.custom(session.on.bind(session))('timeout');
         throw new Http2ClientError('Connection Timeout', 408, this.serviceName);
       })(),
       (async () => {
-        const err = await session.on[promisify.custom].bind(session)('error');
+        const err = await promisify.custom(session.on.bind(session))('error');
         throw new Http2ClientError(err, 400, this.serviceName);
       })()
     ]);
 
     session.close();
-    await promisify(session.on.bind(session))('close');
-
     return response;
   }
 }
