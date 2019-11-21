@@ -174,7 +174,7 @@ class HTTP2Client {
       })(),
       (async () => {
         const err = await req.on[promisify.custom].bind(req)('error');
-        throw new Http2ClientError(err, 400, this.serviceName);
+        throw new Http2ClientError(`${err} ${data.join('')}`, 400, this.serviceName);
       })(),
       (async () => {
         await session.on[promisify.custom].bind(session)('timeout');
