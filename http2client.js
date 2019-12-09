@@ -18,8 +18,8 @@ class Http2ClientError extends Error {
 }
 
 /**
- * Caveat: this http2Client currently only working on HTTP2 servers
- * To support HTTP1, ALPN need to be implemented
+ * A HTTP/2 client.
+ * Note: Use 'fetch' for HTTP/1 calls.
  *
  * @example
  * const HTTP2Client = require('../../framework/http2Client');
@@ -39,7 +39,7 @@ class HTTP2Client {
   static parseUrl(url) {
     const regex = /^(?:(?<scheme>https?):\/\/)?(?<baseUrl>[^/]+)(?:(?<!\/)\/(?!\/)(?<path>.*))?$/;
     const matchObj = regex.exec(url);
-    return matchObj.groups;
+    return matchObj ? matchObj.groups : {};
   }
 
   async get(url, header) {
@@ -120,12 +120,11 @@ class HTTP2Client {
               body ? `data:${body}` : ''
             }`
           );
-          const buffer = Buffer.from(JSON.stringify(body));
+          const buffer = Buffer.from(JSON.stringify(body || null));
           req = session.request({
             [http2.constants.HTTP2_HEADER_SCHEME]: scheme,
             [http2.constants.HTTP2_HEADER_METHOD]: methodMap[method.toUpperCase()],
             [http2.constants.HTTP2_HEADER_PATH]: `/${path}`,
-            'Content-Type': 'application/json',
             'Content-Length': buffer.length,
             ...header
           });
@@ -137,6 +136,7 @@ class HTTP2Client {
     }
 
     req.setEncoding('utf8');
+    req.end();
 
     // custom promisfy functions for req.on session.on
     // they did not follow the node.js (err, result) callback pattern
@@ -151,17 +151,12 @@ class HTTP2Client {
     const data = [];
     let statusCode;
 
-    (async () => {
-      const chunk = await promisify.custom(req.on.bind(req))('data');
-      data.push(chunk);
-    })();
+    req.on('data', chunk => data.push(chunk));
 
     (async () => {
       const headers = await promisify.custom(req.on.bind(req))('response');
       statusCode = headers[':status'];
     })();
-
-    req.end();
 
     const response = await Promise.race([
       (async () => {
