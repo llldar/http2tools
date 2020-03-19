@@ -34,6 +34,13 @@ class Http2ClientError extends Error {
 class HTTP2Client {
   constructor(serviceName) {
     this.serviceName = serviceName;
+    this.methodMap = {
+      GET: http2.constants.HTTP2_METHOD_GET,
+      POST: http2.constants.HTTP2_METHOD_POST,
+      PUT: http2.constants.HTTP2_METHOD_PUT,
+      PATCH: http2.constants.HTTP2_METHOD_PATCH,
+      DELETE: http2.constants.HTTP2_METHOD_DELETE
+    };
   }
 
   static parseUrl(url) {
@@ -63,6 +70,129 @@ class HTTP2Client {
   }
 
   /**
+   * Http2 Fetch
+   *
+   * partially implements fetch API with http2
+   *
+   * supported features:
+   * init: method,headers,body
+   * mothod: get,post,put,patch,delete
+   * response: headers,status,statusText,ok,json(),text(),arrayBuffer()
+   *
+   * @param {string} url - the request full url
+   * @param {object} initObj - incudes: method,headers,body
+   * @returns {object} response of fetch
+   */
+  async fetch(url, initObj) {
+    let { scheme, baseUrl, path } = HTTP2Client.parseUrl(url);
+
+    if (!baseUrl || baseUrl.length === 0) {
+      throw new Http2ClientError('Invalid url', 400, 'Http2Client');
+    }
+    if (!scheme) {
+      scheme = 'http';
+    }
+    baseUrl = `${scheme}://${baseUrl}`;
+    if (!path) {
+      path = '';
+    }
+
+    const { method, headers, body } = initObj;
+    const session = http2.connect(baseUrl);
+    let req;
+
+    switch (method.toUpperCase()) {
+      case 'GET':
+      case 'DELETE':
+        logger.debug(`${method} ${baseUrl}/${path} ${headers ? `header:${headers} ` : ''}`);
+        req = session.request({
+          [http2.constants.HTTP2_HEADER_SCHEME]: scheme,
+          [http2.constants.HTTP2_HEADER_METHOD]: this.methodMap[method.toUpperCase()],
+          [http2.constants.HTTP2_HEADER_PATH]: `/${path}`,
+          ...headers
+        });
+        break;
+      case 'POST':
+      case 'PATCH':
+      case 'PUT':
+        {
+          logger.debug(
+            `${method} ${baseUrl}/${path} ${headers ? `headers:${headers} ` : ''}${
+              body ? `data:${JSON.stringify(body)}` : ''
+            }`
+          );
+          const buffer = Buffer.from(JSON.stringify(body || null));
+          req = session.request({
+            [http2.constants.HTTP2_HEADER_SCHEME]: scheme,
+            [http2.constants.HTTP2_HEADER_METHOD]: this.methodMap[method.toUpperCase()],
+            [http2.constants.HTTP2_HEADER_PATH]: `/${path}`,
+            'Content-Length': buffer.length,
+            ...headers
+          });
+          req.write(buffer);
+        }
+        break;
+      default:
+        throw new Http2ClientError('Unsupported Methods', 405, 'Http2Client');
+    }
+
+    req.setEncoding('utf8');
+    req.end();
+
+    // custom promisify functions for req.on session.on
+    // they did not follow the node.js (err, result) callback pattern
+    // thus needing custom promisify function
+    promisify.custom = fn => event =>
+      new Promise(resolve => {
+        fn(event, value => {
+          resolve(value);
+        });
+      });
+
+    const fetchResponse = {};
+    const data = [];
+
+    req.on('data', chunk => data.push(chunk));
+
+    (async () => {
+      fetchResponse.headers = await promisify.custom(req.on.bind(req))('response');
+      fetchResponse.status = fetchResponse.headers[':status'];
+      fetchResponse.statusText = `${fetchResponse.status}`;
+      fetchResponse.ok = true;
+      if (fetchResponse.status >= 400) {
+        fetchResponse.ok = false;
+      }
+    })();
+
+    await Promise.race([
+      (async () => {
+        await promisify.custom(req.on.bind(req))('end');
+        await new Promise(resolve => setTimeout(resolve, 1)); // needed for proper error handling
+        logger.debug(`statusCode: ${fetchResponse.status}`);
+        fetchResponse.text = () => (data.length ? data.join('') : '');
+        fetchResponse.json = () => (data.length ? JSON.parse(data.join('')) : {});
+        fetchResponse.arrayBuffer = () => ArrayBuffer.from(data);
+      })(),
+      (async () => {
+        const err = await promisify.custom(req.on.bind(req))('error');
+        throw new Http2ClientError(
+          `${err}${data.length > 0 ? `: ${data.join('')}` : ''}`,
+          400,
+          this.serviceName,
+          this.method
+        );
+      })(),
+      (async () => {
+        const err = await promisify.custom(session.on.bind(session))('error');
+        throw new Http2ClientError(err, 400, this.serviceName, this.method);
+      })()
+    ]);
+
+    session.close();
+    return fetchResponse;
+  }
+
+  /**
    * Http2 Request
    *
    * @param {string} url - the request full url
@@ -75,14 +205,6 @@ class HTTP2Client {
    */
   async request(url, method, body, header, defaultScheme = 'http', timeout = 30000) {
     let { scheme, baseUrl, path } = HTTP2Client.parseUrl(url);
-
-    const methodMap = {
-      GET: http2.constants.HTTP2_METHOD_GET,
-      POST: http2.constants.HTTP2_METHOD_POST,
-      PUT: http2.constants.HTTP2_METHOD_PUT,
-      PATCH: http2.constants.HTTP2_METHOD_PATCH,
-      DELETE: http2.constants.HTTP2_METHOD_DELETE
-    };
 
     if (!baseUrl || baseUrl.length === 0) {
       throw new Http2ClientError('Invalid url', 400, 'Http2Client');
@@ -106,7 +228,7 @@ class HTTP2Client {
         logger.debug(`${method} ${baseUrl}/${path} ${header ? `header:${header} ` : ''}`);
         req = session.request({
           [http2.constants.HTTP2_HEADER_SCHEME]: scheme,
-          [http2.constants.HTTP2_HEADER_METHOD]: methodMap[method.toUpperCase()],
+          [http2.constants.HTTP2_HEADER_METHOD]: this.methodMap[method.toUpperCase()],
           [http2.constants.HTTP2_HEADER_PATH]: `/${path}`,
           ...header
         });
@@ -123,7 +245,7 @@ class HTTP2Client {
           const buffer = Buffer.from(JSON.stringify(body || null));
           req = session.request({
             [http2.constants.HTTP2_HEADER_SCHEME]: scheme,
-            [http2.constants.HTTP2_HEADER_METHOD]: methodMap[method.toUpperCase()],
+            [http2.constants.HTTP2_HEADER_METHOD]: this.methodMap[method.toUpperCase()],
             [http2.constants.HTTP2_HEADER_PATH]: `/${path}`,
             'Content-Length': buffer.length,
             ...header

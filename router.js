@@ -21,4 +21,17 @@ router.post(
   })
 );
 
+router.post(
+  '/fetch',
+  asyncHandler(async (req, res) => {
+    const { method, url, data } = req.body;
+    if (['GET', 'POST', 'PATCH', 'PUT', 'DELETE'].includes(method.toUpperCase())) {
+      const result = await http2client.fetch(url, { method, body: data });
+      res.send(result.text());
+    } else {
+      res.status(405).end();
+    }
+  })
+);
+
 module.exports = router;
