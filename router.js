@@ -9,25 +9,12 @@ const router = express.Router();
 const http2client = new HTTP2Client('TestService');
 
 router.post(
-  '/request',
-  asyncHandler(async (req, res) => {
-    const { method, url, data } = req.body;
-    if (['GET', 'POST', 'PATCH', 'PUT', 'DELETE'].includes(method.toUpperCase())) {
-      const result = await http2client[method.toLowerCase()](url, data);
-      res.send(result);
-    } else {
-      res.status(405).end();
-    }
-  })
-);
-
-router.post(
   '/fetch',
   asyncHandler(async (req, res) => {
     const { method, url, data } = req.body;
     if (['GET', 'POST', 'PATCH', 'PUT', 'DELETE'].includes(method.toUpperCase())) {
       const result = await http2client.fetch(url, { method, body: data });
-      res.send(result.text());
+      res.send(await result.text());
     } else {
       res.status(405).end();
     }
